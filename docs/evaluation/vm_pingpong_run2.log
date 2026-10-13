@@ -1,0 +1,12 @@
+qemu accel=kvm kernel=/boot/vmlinuz-6.12.111+deb13-amd64 N=200000
+--- guest output ---
+rico_init: using /sys/bus/pci/devices/0000:00:02.0/resource2
+guest: 200000 submitted, 200000 completed, 0 errors
+UNLOADED ping-pong (depth 1, 10000 warmup discarded)
+  round-trip latency (n=190000, cycles)
+    min 508 | p50 648 | p90 674 | p99 758 | p99.9 1012 | max 269864 | avg 648.6
+    p50 325 ns | p99 380 ns | avg 325 ns  (TSC ~2.00 GHz)
+RICO_GUEST_EXIT=0
+--- hostd ---
+consumed=200000 completed=200000 bad=0 errors=0
+PASS: 200000 ping-pong requests across the QEMU boundary, 0 errors

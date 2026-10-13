@@ -1,0 +1,10 @@
+LOADED (depth unbounded/0): 7.11 Mreq/s over 2.811 s
+  NOTE: latencies below include queueing; not the unloaded cost
+  round-trip incl. queueing (n=19990000, cycles)
+    min 330 | p50 778 | p90 1022 | p99 1330 | p99.9 40836 | max 375514 | avg 917.2
+    p50 390 ns | p99 666 ns | avg 459 ns  (TSC ~2.00 GHz)
+  host->guest (CQ) leg (n=19990000, cycles)
+    min 102 | p50 294 | p90 382 | p99 476 | p99.9 3700 | max 375100 | avg 307.3
+    p50 147 ns | p99 238 ns | avg 154 ns  (TSC ~2.00 GHz)
+mode=threads requests=20000000 host: consumed=20000000 completed=20000000 errors=0 | guest errors=0
+2.96 s total -> PASS

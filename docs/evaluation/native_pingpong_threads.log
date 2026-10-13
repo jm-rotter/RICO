@@ -1,0 +1,9 @@
+UNLOADED ping-pong (depth 1, 10000 warmup discarded)
+  round-trip latency (n=1990000, cycles)
+    min 476 | p50 616 | p90 654 | p99 734 | p99.9 1232 | max 60862 | avg 614.9
+    p50 308 ns | p99 368 ns | avg 308 ns  (TSC ~2.00 GHz)
+  host->guest (CQ) leg (n=1990000, cycles)
+    min 164 | p50 282 | p90 322 | p99 358 | p99.9 498 | max 60520 | avg 281.3
+    p50 141 ns | p99 179 ns | avg 141 ns  (TSC ~2.00 GHz)
+mode=threads requests=2000000 host: consumed=2000000 completed=2000000 errors=0 | guest errors=0
+0.82 s total -> PASS
