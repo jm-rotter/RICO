@@ -175,7 +175,8 @@ static int be_submit(void *be, const struct rico_req *q, struct rico_cpl *cpl)
 
     if (q->op != RICO_OP_FLUSH) {
         /* offset/len come from the guest: check without overflowing. */
-        if (q->len > b->dev_size || q->offset > b->dev_size - q->len) {
+        if (q->len > RICO_MAX_PAYLOAD || q->len > b->dev_size ||
+            q->offset > b->dev_size - q->len) {
             b->st.range_rejects++;
             cpl->status = RICO_ST_INVAL;
             return RICO_BE_DONE;
@@ -288,6 +289,10 @@ static unsigned be_reap(void *be, struct rico_cpl *out, unsigned max)
         }
         if (finish(b, idx, &b->slots[idx], res, &out[n])) n++;
     }
+    /* finish() may have queued continuations (short I/O, EAGAIN/EINTR retries).
+     * The worker only kicks after submitting new requests, so push them now or
+     * they would sit in the SQ until some unrelated submit or wait(). */
+    do_kick(b);
     return n;
 }
 

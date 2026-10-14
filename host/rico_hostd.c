@@ -67,7 +67,11 @@ int main(int argc, char **argv)
                                         .no_fixed = no_fixed };
         int err;
         io = rico_iouring_create(&cfg, &err);
-        if (!io) { fprintf(stderr, "rico_hostd: io_uring backend on %s: %s\n", backing, strerror(-err)); return 1; }
+        if (!io) {
+            fprintf(stderr, "rico_hostd: io_uring backend on %s: %s\n", backing, strerror(-err));
+            rico_host_close(&h);
+            return 1;
+        }
         rico_host_set_backend(&h, &rico_iouring_ops, io);
         fprintf(stderr, "rico_hostd: io_uring backend: %s (%s)\n", backing, rico_iouring_describe(io));
     }
@@ -76,7 +80,14 @@ int main(int argc, char **argv)
     if (backing) { fprintf(stderr, "rico_hostd: built without liburing (--backing unavailable)\n"); return 2; }
 #endif
     signal(SIGINT, on_sig); signal(SIGTERM, on_sig);
-    if (rico_host_start(&h)) { perror("start"); return 1; }
+    if (rico_host_start(&h)) {
+        perror("start");
+#ifdef RICO_HAVE_IOURING
+        rico_iouring_destroy(io);
+#endif
+        rico_host_close(&h);
+        return 1;
+    }
     fprintf(stderr, "rico_hostd: ready on %s (SQ %u, CQ %u slots)\n",
             path, RICO_RING_SLOTS, RICO_CQ_SLOTS);
 
@@ -106,7 +117,8 @@ int main(int argc, char **argv)
                (unsigned long long)st->range_rejects, (unsigned long long)st->io_errors,
                (unsigned long long)st->bad_cqes, (unsigned long long)st->submit_errors,
                (unsigned long long)st->max_inflight);
-        io_ok = !st->io_errors && !st->bad_cqes && !st->submit_errors && !st->range_rejects;
+        io_ok = !st->io_errors && !st->bad_cqes && !st->submit_errors && !st->range_rejects &&
+                (!want || st->submitted == st->completed);
         rico_iouring_destroy(io);           /* cancels + drains before freeing buffers */
     }
 #else
