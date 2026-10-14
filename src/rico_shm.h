@@ -27,6 +27,24 @@ struct rico_shm {
 };
 _Static_assert(sizeof(struct rico_shm) <= RICO_SHM_SIZE, "grow RICO_SHM_SIZE");
 
+/* Wire offsets. The guest kernel driver (driver/rico_drv.h) asserts the same
+ * numbers against its own mirror of this layout: change both together, and
+ * bump RICO_SHM_VER, if the layout ever changes. */
+#define RICO_WIRE_OFF_HDR_READY 24u
+#define RICO_WIRE_OFF_SQ_HEAD   64u
+#define RICO_WIRE_OFF_SQ_TAIL   128u
+#define RICO_WIRE_OFF_SQ_SLOTS  192u
+#define RICO_WIRE_OFF_CQ_HEAD   65728u
+#define RICO_WIRE_OFF_CQ_TAIL   65792u
+#define RICO_WIRE_OFF_CQ_SLOTS  65856u
+_Static_assert(offsetof(struct rico_shm, hdr.host_ready) == RICO_WIRE_OFF_HDR_READY, "wire layout");
+_Static_assert(offsetof(struct rico_shm, sq.head)  == RICO_WIRE_OFF_SQ_HEAD,  "wire layout");
+_Static_assert(offsetof(struct rico_shm, sq.tail)  == RICO_WIRE_OFF_SQ_TAIL,  "wire layout");
+_Static_assert(offsetof(struct rico_shm, sq.slots) == RICO_WIRE_OFF_SQ_SLOTS, "wire layout");
+_Static_assert(offsetof(struct rico_shm, cq.head)  == RICO_WIRE_OFF_CQ_HEAD,  "wire layout");
+_Static_assert(offsetof(struct rico_shm, cq.tail)  == RICO_WIRE_OFF_CQ_TAIL,  "wire layout");
+_Static_assert(offsetof(struct rico_shm, cq.slots) == RICO_WIRE_OFF_CQ_SLOTS, "wire layout");
+
 /* --- deterministic mock workload (guest generates, host verifies) -------- */
 
 #define RICO_DEV_BYTES (1u << 20)

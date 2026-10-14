@@ -5,6 +5,8 @@
 #   make guest      guest binaries (build/rico_guest, rico_init: static; rico_test)
 #   make test       unit/stress tests incl. ThreadSanitizer (no VM needed)
 #   make integration  end-to-end test across QEMU/KVM (needs /boot kernel, qemu)
+#   make driver     guest kernel module driver/rico.ko (needs kernel headers; KDIR=...)
+#   make driver-test  boot a QEMU guest, insmod rico.ko, smoke-test /dev/rico vs rico_hostd
 #   make clean
 
 CC      ?= cc
@@ -33,11 +35,14 @@ endif
 
 HDRS := $(wildcard src/*.h host/*.h guest/*.h)
 
-.PHONY: all host guest test tsan iouring_test integration clean
+# Kernel build tree for the guest module. Must match the kernel the guest boots.
+KDIR ?= /lib/modules/$(shell uname -r)/build
+
+.PHONY: all host guest test tsan iouring_test integration driver driver-test clean
 all: host guest
 
 host: $(BUILD)/rico_hostd
-guest: $(BUILD)/rico_guest $(BUILD)/rico_init $(BUILD)/rico_test
+guest: $(BUILD)/rico_guest $(BUILD)/rico_init $(BUILD)/rico_test $(BUILD)/rico_drvtest
 tsan: $(BUILD)/rico_test_tsan
 ifneq ($(URING_CFLAGS),)
 iouring_test: $(BUILD)/rico_iouring_test
@@ -54,6 +59,14 @@ $(BUILD)/rico_guest: guest/rico_guest.c $(HDRS) | $(BUILD)
 
 $(BUILD)/rico_init: guest/rico_init.c | $(BUILD)
 	$(CC) $(CFLAGS) $(STATIC) -o $@ $<
+
+# userspace smoke test for /dev/rico (driver/rico.ko); static for the initramfs
+$(BUILD)/rico_drvtest: guest/rico_drvtest.c driver/rico_uapi.h $(HDRS) | $(BUILD)
+	$(CC) $(CFLAGS) -Idriver $(STATIC) -o $@ $<
+
+# Kernel module. Not part of `all`: it needs the kernel headers installed.
+driver:
+	$(MAKE) -C driver KDIR=$(KDIR)
 
 $(BUILD)/rico_test: guest/rico_test.c host/rico_host.c $(URING_SRC) $(HDRS) | $(BUILD)
 	$(CC) $(CFLAGS) $(URING_CFLAGS) -o $@ guest/rico_test.c host/rico_host.c $(URING_SRC) $(LDLIBS) $(URING_LIBS)
@@ -88,5 +101,9 @@ endif
 integration: all
 	./scripts/run_integration_test.sh
 
+driver-test: all driver
+	KDIR=$(KDIR) ./scripts/run_driver_test.sh
+
 clean:
 	rm -rf $(BUILD)
+	-$(MAKE) -C driver clean KDIR=$(KDIR)

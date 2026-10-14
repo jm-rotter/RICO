@@ -1,3 +1,13 @@
 build/
 *.iso
 *.o
+# kernel module build products
+driver/*.ko
+driver/*.mod
+driver/*.mod.c
+driver/*.o
+driver/.*.cmd
+driver/.module-common.o
+driver/Module.symvers
+driver/modules.order
+driver/.tmp_versions/

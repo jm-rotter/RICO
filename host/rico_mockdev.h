@@ -11,6 +11,9 @@ struct rico_mockdev {
     uint8_t  dev[RICO_DEV_BYTES];           /* host-private, never shared */
     uint64_t next_id;
     uint64_t errors;                        /* workload/order mismatches seen */
+    int      no_verify;                     /* skip the deterministic-workload check: for
+                                             * clients that choose their own request ids
+                                             * (the rico.ko driver); device semantics stay */
 };
 
 /* rico_handler_fn: fill cpl (already zeroed, id set) for one request. */
@@ -21,7 +24,7 @@ static inline void rico_mockdev_handle(const struct rico_req *q,
     struct rico_req expect;
     rico_make_req(q->id, &expect);
     expect.tsc_submit = q->tsc_submit;      /* guest-stamped; not part of the workload */
-    if (q->id != d->next_id || memcmp(q, &expect, sizeof *q)) d->errors++;
+    if (!d->no_verify && (q->id != d->next_id || memcmp(q, &expect, sizeof *q))) d->errors++;
     d->next_id++;
 
     if (q->op != RICO_OP_FLUSH && q->offset > RICO_DEV_BYTES - q->len) {

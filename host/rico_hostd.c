@@ -5,6 +5,8 @@
  *   rico_hostd <shm-path> [expected_requests] [options]
  *     --cpu N        pin the worker thread to CPU N
  *     --busy         never sleep when idle (use for latency measurements)
+ *     --no-verify    don't check requests against the deterministic test workload
+ *                    (needed when the client picks its own ids, e.g. rico.ko)
  *     --backing PATH serve I/O from this file/block device through io_uring
  *                    (default: in-memory mock device, synchronous)
  *       --qd N         max requests in flight (power of two, default 256)
@@ -45,6 +47,7 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--cpu") && i + 1 < argc) cpu = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--busy")) busy = 1;
+        else if (!strcmp(argv[i], "--no-verify")) md.no_verify = 1;
         else if (!strcmp(argv[i], "--backing") && i + 1 < argc) backing = argv[++i];
         else if (!strcmp(argv[i], "--qd") && i + 1 < argc) qd = (unsigned)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--sqpoll")) sqpoll = 1;
@@ -53,7 +56,7 @@ int main(int argc, char **argv)
         else if (npos++ == 0) path = argv[i];
         else want = strtoull(argv[i], NULL, 0);
     }
-    if (!path) { fprintf(stderr, "usage: %s <shm-path> [n] [--cpu N] [--busy] [--backing PATH [--qd N] [--sqpoll] [--sqpoll-cpu N] [--no-fixed]]\n", argv[0]); return 2; }
+    if (!path) { fprintf(stderr, "usage: %s <shm-path> [n] [--cpu N] [--busy] [--no-verify] [--backing PATH [--qd N] [--sqpoll] [--sqpoll-cpu N] [--no-fixed]]\n", argv[0]); return 2; }
 
     if (rico_host_create(path)) { perror("create"); return 1; }
     struct rico_host h;
