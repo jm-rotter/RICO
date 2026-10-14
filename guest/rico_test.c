@@ -22,6 +22,9 @@
 #include "rico_guest.h"
 #include "rico_host.h"
 #include "rico_mockdev.h"
+#ifdef RICO_HAVE_IOURING
+#include "rico_iouring.h"
+#endif
 
 static struct rico_mockdev md;
 
@@ -45,7 +48,9 @@ int main(int argc, char **argv)
 {
     struct rico_guest_cfg cfg = { .n = 20u * 1000 * 1000, .depth = 0, .warmup = (uint64_t)-1,
                                   .cq_leg = 1, .cpu = -1 };
-    int procs = 0, host_cpu = -1, busy = 0;
+    int procs = 0, host_cpu = -1, busy = 0, use_uring = 0, sqpoll = 0, no_fixed = 0;
+    unsigned qd = 0;
+    const char *backing = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--procs")) procs = 1;
         else if (!strcmp(argv[i], "--pingpong")) cfg.depth = 1;
@@ -54,6 +59,11 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--host-cpu") && i + 1 < argc) host_cpu = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--warmup") && i + 1 < argc) cfg.warmup = strtoull(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "--busy")) busy = 1;
+        else if (!strcmp(argv[i], "--iouring")) use_uring = 1;
+        else if (!strcmp(argv[i], "--backing") && i + 1 < argc) { backing = argv[++i]; use_uring = 1; }
+        else if (!strcmp(argv[i], "--qd") && i + 1 < argc) qd = (unsigned)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--sqpoll")) { sqpoll = 1; use_uring = 1; }
+        else if (!strcmp(argv[i], "--no-fixed")) no_fixed = 1;
         else if (argv[i][0] == '-') { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
         else cfg.n = strtoull(argv[i], NULL, 0);
     }
@@ -67,6 +77,27 @@ int main(int argc, char **argv)
     if (rico_host_create(path) || rico_host_open(&h, path, rico_mockdev_handle, &md, host_cpu)) {
         perror("host setup"); return 2;
     }
+
+#ifdef RICO_HAVE_IOURING
+    struct rico_iouring *io = NULL;
+    char img[64];
+    if (use_uring) {
+        if (!backing) {         /* tmpfs by default: the workload is 1/8 FLUSH, which would be
+                                 * an fsync storm on a real disk */
+            snprintf(img, sizeof img, "/dev/shm/rico_test.%d.img", getpid());
+            backing = img;
+        }
+        struct rico_iouring_cfg icfg = { .path = backing, .min_size = RICO_DEV_BYTES, .qd = qd,
+                                         .sqpoll = sqpoll, .sqpoll_cpu = -1, .no_fixed = no_fixed };
+        int err;
+        io = rico_iouring_create(&icfg, &err);
+        if (!io) { fprintf(stderr, "io_uring backend: %s\n", strerror(-err)); return 2; }
+        rico_host_set_backend(&h, &rico_iouring_ops, io);
+        printf("backend: io_uring on %s (%s)\n", backing, rico_iouring_describe(io));
+    }
+#else
+    if (use_uring) { fprintf(stderr, "built without liburing\n"); return 2; }
+#endif
 
     double t0 = now();
     h.busy_poll = busy;
@@ -103,8 +134,43 @@ int main(int argc, char **argv)
 
     int ok = r.completed == n && r.errors == 0 && h.completed == n &&
              h.consumed == n && md.errors == 0 && h.bad_requests == 0;
-    printf("mode=%s requests=%llu host: consumed=%llu completed=%llu errors=%llu | guest errors=%llu\n",
-           procs ? "procs" : "threads", (unsigned long long)n,
+
+#ifdef RICO_HAVE_IOURING
+    if (io) {
+        /* Independent end-to-end check of what actually reached the device: replay
+         * every write in submission order and compare with the file's final bytes
+         * (valid because overlapping requests are executed in submission order). */
+        const struct rico_iouring_stats *st = rico_iouring_get_stats(io);
+        printf("iouring: submitted=%llu kicks=%llu (%.1f sqes/kick) conflict_stalls=%llu slot_stalls=%llu "
+               "short=%llu io_errors=%llu bad_cqes=%llu max_inflight=%llu\n",
+               (unsigned long long)st->submitted, (unsigned long long)st->kicks,
+               st->kicks ? (double)st->sqes / st->kicks : 0.0,
+               (unsigned long long)st->conflict_stalls, (unsigned long long)st->slot_stalls,
+               (unsigned long long)st->short_ios, (unsigned long long)st->io_errors,
+               (unsigned long long)st->bad_cqes, (unsigned long long)st->max_inflight);
+        int clean = !st->io_errors && !st->bad_cqes && !st->submit_errors && !st->range_rejects;
+        rico_iouring_destroy(io);
+        uint8_t *model = calloc(1, RICO_DEV_BYTES), *file = malloc(RICO_DEV_BYTES);
+        int fd = open(backing, O_RDONLY);
+        int match = 0;
+        if (model && file && fd >= 0) {
+            struct rico_req q;
+            for (uint64_t id = 0; id < n; id++) {
+                rico_make_req(id, &q);
+                if (q.op == RICO_OP_WRITE) memcpy(&model[q.offset], q.payload, q.len);
+            }
+            match = pread(fd, file, RICO_DEV_BYTES, 0) == (ssize_t)RICO_DEV_BYTES &&
+                    !memcmp(model, file, RICO_DEV_BYTES);
+        }
+        printf("backing file vs replayed model: %s\n", match ? "identical" : "MISMATCH");
+        if (fd >= 0) close(fd);
+        if (backing == img) unlink(img);
+        free(model); free(file);
+        ok = ok && clean && match;
+    }
+#endif
+    printf("mode=%s%s requests=%llu host: consumed=%llu completed=%llu errors=%llu | guest errors=%llu\n",
+           procs ? "procs" : "threads", use_uring ? "+iouring" : "", (unsigned long long)n,
            (unsigned long long)h.consumed, (unsigned long long)h.completed,
            (unsigned long long)md.errors, (unsigned long long)r.errors);
     printf("%.2f s total -> %s\n", dt, ok ? "PASS" : "FAIL");

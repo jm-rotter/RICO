@@ -11,6 +11,9 @@
 # Env knobs:  N=10000  TIMEOUT=180  KERNEL=/boot/vmlinuz-$(uname -r)
 #             HOST_CPU=<cpu> (pin hostd)   GUEST_CPU=<vcpu index> (pin in guest)
 #             QEMU_ACCEL=kvm|tcg   KEEP=1 (keep temp dir/logs)
+#             BACKING=iouring   serve I/O from a real file via the io_uring backend
+#                               (needs liburing); BACKING_PATH=<file|blockdev> to
+#                               choose the target (default: tmpfs file); HOSTD_OPTS="--sqpoll ..."
 set -u
 cd "$(dirname "$0")/.."
 
@@ -29,7 +32,7 @@ HOSTD_PID=""; QEMU_PID=""
 cleanup() {
     [ -n "$QEMU_PID" ] && kill -0 "$QEMU_PID" 2>/dev/null && { kill "$QEMU_PID"; sleep 0.5; kill -9 "$QEMU_PID" 2>/dev/null; }
     [ -n "$HOSTD_PID" ] && kill -0 "$HOSTD_PID" 2>/dev/null && { kill "$HOSTD_PID"; sleep 0.2; kill -9 "$HOSTD_PID" 2>/dev/null; }
-    rm -f "$SHM"
+    rm -f "$SHM" "$SHM.img"
     if [ "${KEEP:-0}" = 1 ]; then echo "kept: $TMP"; else rm -rf "$TMP"; fi
 }
 trap cleanup EXIT
@@ -48,6 +51,13 @@ cp build/rico_init "$TMP/root/init"; cp build/rico_guest "$TMP/root/rico_guest"
 
 # --- 1. host daemon ---------------------------------------------------------
 HOSTD_ARGS=("$SHM" "$N" --busy)
+if [ "${BACKING:-}" = iouring ]; then
+    # tmpfs default: the test workload is 1/8 FLUSH, which on a real disk is an fsync
+    # storm (ms-scale p90). Point BACKING_PATH at a disk/blockdev to see that cost.
+    HOSTD_ARGS+=(--backing "${BACKING_PATH:-$SHM.img}")
+fi
+# shellcheck disable=SC2206
+HOSTD_ARGS+=(${HOSTD_OPTS:-})
 [ -n "${HOST_CPU:-}" ] && HOSTD_ARGS+=(--cpu "$HOST_CPU")
 ./build/rico_hostd "${HOSTD_ARGS[@]}" > "$TMP/hostd.log" 2>&1 &
 HOSTD_PID=$!

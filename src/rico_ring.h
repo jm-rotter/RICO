@@ -51,7 +51,7 @@
 #define RICO_MAX_CPL_DATA 32u               /* inline bytes in a completion */
 
 enum rico_op { RICO_OP_READ = 1, RICO_OP_WRITE = 2, RICO_OP_FLUSH = 3 };
-enum rico_status { RICO_ST_OK = 0, RICO_ST_INVAL = 1 };
+enum rico_status { RICO_ST_OK = 0, RICO_ST_INVAL = 1, RICO_ST_IOERR = 2 };
 
 /* SQ entry: one cache line. WRITE: payload[0..len) is data to write.
  * READ: len = number of bytes requested (<= RICO_MAX_PAYLOAD). */

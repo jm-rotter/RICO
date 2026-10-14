@@ -1,0 +1,12 @@
+backend: io_uring on /dev/shm/rico_test.259004.img (qd=256 fixed-file fixed-bufs dev=1048576 bytes)
+UNLOADED ping-pong (depth 1, 10000 warmup discarded)
+  round-trip latency (n=990000, cycles)
+    min 2698 | p50 3600 | p90 3700 | p99 3852 | p99.9 7548 | max 13569898 | avg 5297.1
+    p50 1803 ns | p99 1929 ns | avg 2653 ns  (TSC ~2.00 GHz)
+  host->guest (CQ) leg (n=990000, cycles)
+    min 218 | p50 298 | p90 320 | p99 344 | p99.9 2992 | max 44582 | avg 304.5
+    p50 149 ns | p99 172 ns | avg 153 ns  (TSC ~2.00 GHz)
+iouring: submitted=1000000 kicks=1000000 (1.0 sqes/kick) conflict_stalls=0 slot_stalls=0 short=0 io_errors=0 bad_cqes=0 max_inflight=1
+backing file vs replayed model: identical
+mode=threads+iouring requests=1000000 host: consumed=1000000 completed=1000000 errors=0 | guest errors=0
+2.82 s total -> PASS
