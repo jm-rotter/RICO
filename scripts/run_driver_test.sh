@@ -19,7 +19,10 @@
 #             KDIR=/lib/modules/$(uname -r)/build   (must match KERNEL!)
 #             QEMU_ACCEL=kvm|tcg   KEEP=1 (keep temp dir/logs)
 #             HOST_CPU=<cpu> (pin hostd)
-#             BACKING=iouring [BACKING_PATH=...]  serve I/O via the io_uring backend
+#             BACKING=iouring [BACKING_PATH=<file|blockdev>] [HOSTD_OPTS="--sqpoll --qd 256"]
+#                             serve I/O from a real file via the host io_uring backend.
+#                             Needs rico_hostd built with liburing (see Makefile:
+#                             liburing-dev, or LIBURING_INC=/LIBURING_LIB=).
 set -u
 cd "$(dirname "$0")/.."
 
@@ -84,6 +87,8 @@ HOSTD_ARGS=("$SHM" "$N" --busy --no-verify)
 if [ "${BACKING:-}" = iouring ]; then
     HOSTD_ARGS+=(--backing "${BACKING_PATH:-$SHM.img}")
 fi
+# shellcheck disable=SC2206
+HOSTD_ARGS+=(${HOSTD_OPTS:-})
 [ -n "${HOST_CPU:-}" ] && HOSTD_ARGS+=(--cpu "$HOST_CPU")
 ./build/rico_hostd "${HOSTD_ARGS[@]}" > "$TMP/hostd.log" 2>&1 &
 HOSTD_PID=$!
@@ -135,8 +140,15 @@ wait "$HOSTD_PID"; HRC=$?; HOSTD_PID=""
 grep -q "consumed=$N completed=$N bad=0 errors=0" "$TMP/hostd.log" \
     || fail "hostd stats wrong: $(grep consumed= "$TMP/hostd.log" | tail -1)"
 [ "$HRC" = 0 ] || fail "rico_hostd exit $HRC"
+if [ "${BACKING:-}" = iouring ]; then
+    # Prove the data plane really went through io_uring, cleanly.
+    grep -q "^iouring: submitted=[0-9]* completed=" "$TMP/hostd.log" \
+        || fail "BACKING=iouring but hostd printed no io_uring stats"
+    grep -q " io_errors=0 bad_cqes=0 submit_errors=0 " "$TMP/hostd.log" \
+        || fail "io_uring backend reported errors: $(grep '^iouring:' "$TMP/hostd.log")"
+fi
 
 echo "--- guest output ---"
 grep -E 'rico:|rico_init:|drvtest:|RICO_' "$LOG"
-echo "--- hostd ---"; grep consumed= "$TMP/hostd.log" | tail -1
+echo "--- hostd ---"; grep -E '^(consumed=|iouring:)' "$TMP/hostd.log"
 echo "PASS: rico.ko loaded, $N requests through /dev/rico verified, module unloaded cleanly"

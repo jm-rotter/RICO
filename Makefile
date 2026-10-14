@@ -7,6 +7,7 @@
 #   make integration  end-to-end test across QEMU/KVM (needs /boot kernel, qemu)
 #   make driver     guest kernel module driver/rico.ko (needs kernel headers; KDIR=...)
 #   make driver-test  boot a QEMU guest, insmod rico.ko, smoke-test /dev/rico vs rico_hostd
+#   make driver-test-iouring  same, with host I/O served through io_uring (needs liburing)
 #   make clean
 
 CC      ?= cc
@@ -38,7 +39,7 @@ HDRS := $(wildcard src/*.h host/*.h guest/*.h)
 # Kernel build tree for the guest module. Must match the kernel the guest boots.
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
-.PHONY: all host guest test tsan iouring_test integration driver driver-test clean
+.PHONY: all host guest test tsan iouring_test integration driver driver-test driver-test-iouring clean
 all: host guest
 
 host: $(BUILD)/rico_hostd
@@ -103,6 +104,13 @@ integration: all
 
 driver-test: all driver
 	KDIR=$(KDIR) ./scripts/run_driver_test.sh
+
+# Same, with I/O served by the host io_uring backend (needs liburing, see above).
+driver-test-iouring:
+ifeq ($(URING_CFLAGS),)
+	$(error liburing not found: install liburing-dev or set LIBURING_INC/LIBURING_LIB)
+endif
+	$(MAKE) --no-print-directory driver-test BACKING=iouring
 
 clean:
 	rm -rf $(BUILD)
